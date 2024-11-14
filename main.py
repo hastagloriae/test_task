@@ -1,19 +1,15 @@
 import requests
 from bs4 import BeautifulSoup
-import re
-from time import sleep
+from sorter import Sorter
 
 
 class ResumeParser:
-    def __init__(self, base_url, headers, filters=None):
-        self.base_url = base_url
+    def __init__(self, headers):
         self.headers = headers
-        self.filters = filters if filters else {}
 
-    def get_url(self, page=0):
+    def get_url(self, base_url, page=0):
         """Получение всех вакансий с указанной страницы."""
-        url = f"{self.base_url}?page={page}"
-        sleep(3)  # Чтобы избежать блокировки за частые запросы
+        url = f"{base_url}?page={page}"
         work_request = requests.get(url, headers=self.headers)
         soup = BeautifulSoup(work_request.text, "lxml")
         return soup.find_all("div", class_="card card-hover card-search resume-link card-visited wordwrap")
@@ -39,15 +35,6 @@ class ResumeParser:
         }
 
         # Поиск информации по меткам
-        info = {
-            "Город": "Город не найден",
-            "Возраст": "Возраст не найден",
-            "Занятость": "Занятость не найдена",
-            "Навыки": "Навыки не найдены",
-            "Опыт": "Опыт не найден"
-        }
-
-        # Город
         city_label = soup.find("dt", string=lambda x: x and ("місто" in x.lower() or "місто проживання" in x.lower()))
         if city_label:
             city_value = city_label.find_next_sibling("dd")
@@ -75,73 +62,53 @@ class ResumeParser:
             if skills_text:
                 info["Навыки"] = skills_text
 
-        # Опыт работы(оставлю как есть ибо на ворк нету отдельной графы на самой странице вакансии)
+        # Опыт работы
         experience_label = soup.find("dt", string="Досвід роботи:")
         if experience_label:
             experience_value = experience_label.find_next_sibling("dd")
             if experience_value:
                 info["Опыт"] = experience_value.text.strip()
 
-        # Возвращаем собранную информацию
         return info
 
-    def matches_keywords_in_resume(self, resume_link):
-        """Проверка, содержат ли ключевые слова в тексте резюме (описание, опыт и т.д.)."""
-        response = requests.get(resume_link, headers=self.headers)
-        soup = BeautifulSoup(response.text, "lxml")
 
-        # Собираем весь текст с резюме
-        text_to_check = soup.get_text().lower()
-
-        # Проходим по ключевым словам и проверяем, присутствуют ли они в тексте
-        keywords = [kw.lower() for kw in self.filters.get("keywords", [])]
-        for keyword in keywords:
-            if keyword not in text_to_check:
-                return False  # Если хотя бы одно ключевое слово не найдено, пропускаем это резюме
-        return True  # Если все ключевые слова найдены
+class ResumeFilter:
+    def __init__(self, filters):
+        self.filters = filters
 
     def matches_filters(self, resume):
-        """Проверка, подходит ли резюме под фильтры."""
-        # Проверяем основные фильтры
+        """Проверка, подходит ли резюме под фильтры поиска."""
         if self.filters.get("job_position") and self.filters["job_position"].lower() not in resume["title"].lower():
             return False
         if self.filters.get("city") and self.filters["city"].lower() not in resume.get("Город", "").lower():
             return False
         if self.filters.get("employment_type") and self.filters["employment_type"].lower() not in resume.get("Занятость", "").lower():
             return False
-        if self.filters.get("min_salary") and int(resume.get("Зарплата", 0)) < self.filters["min_salary"]:
-            return False
-        if self.filters.get("min_experience") and int(resume.get("Опыт", 0)) < self.filters["min_experience"]:
-            return False
-
-        # Проверка ключевых слов непосредственно на странице с полным резюме
-        if not self.matches_keywords_in_resume(resume['link']):
-            return False
-
         return True
 
 
 class ResumeScraper:
-    def __init__(self, base_url, headers, filters=None):
-        self.parser = ResumeParser(base_url, headers, filters)
+    def __init__(self, base_url, headers, filters_vacancy=None, filters_score=None):
+        self.base_url = base_url
+        self.parser = ResumeParser(headers)
+        self.filter_vacancy = ResumeFilter(filters_vacancy)
+        self.filter_score = ResumeFilter(filters_score) if filters_score else None
 
     def scrape_resumes(self, pages=1):
-        """Парсинг резюме с нескольких страниц с фильтрацией."""
+        """Парсинг резюме с нескольких страниц с фильтрацией по обязательным параметрам."""
         all_resumes = []
         for page in range(pages):
-            vacancies = self.parser.get_url(page)
+            vacancies = self.parser.get_url(self.base_url, page)
             for vacancy in vacancies:
                 resume_info = self.parser.parse_resume(vacancy)
                 additional_info = self.parser.other_info(resume_info['link'])
                 if additional_info:
                     resume_info.update(additional_info)
-                    # Применяем фильтры
-                    if self.parser.matches_filters(resume_info):
+                    if self.filter_vacancy.matches_filters(resume_info):
                         all_resumes.append(resume_info)
         return all_resumes
 
 
-# Основной код для парсинга
 if __name__ == "__main__":
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/"
@@ -150,25 +117,36 @@ if __name__ == "__main__":
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
     }
 
-    base_url = "https://www.work.ua/resumes-it"  # Базовый URL для работы с резюме
+    base_url = "https://www.work.ua/resumes-it-python"  # Базовый URL для работы с резюме
 
-    # Фильтры для парсинга
-    filters = {
-        "job_position": "",  # Фильтровать по должности
-        "min_experience": 0,                 # Минимум 2 года опыта
-        "city": "",                      # Фильтровать по городу
-        "employment_type": "",      # Фильтровать по типу занятости
-        "min_salary": 0,                  # Минимальная зарплата 1000
-        "keywords": [""]  # Ключевые слова для поиска
+    # парсит сами резюме  за совпадение
+    filters_vacancy = {
+        "job_position": "python",  # Фильтровать по должности
+        "keywords": [""],  # Ключевые слова для поиска
+        "city": "",  # Фильтровать по городу
+        "employment_type": "",  # Фильтровать по типу занятости
     }
 
-    scraper = ResumeScraper(base_url, headers, filters)
+    # насчитывает балы за совпадение
+    filters_score = {
+        "job_position": "django",  # Фильтровать по должности
+        "keywords": ["linux", "HTML", "CSS", ""],  # Ключевые слова для поиска
+        "city": "Київ",  # Фильтровать по городу
+        "employment_type": "",  # Фильтровать по типу занятости
+    }
 
-    # Собираем резюме с указанной страницы(с 1 и до указанной) 3(в коде)=2(на сайте)
+    scraper = ResumeScraper(base_url, headers, filters_vacancy, filters_score)
+
+    # Собираем резюме с 1 страницы
     resumes = scraper.scrape_resumes(pages=3)
 
+    # Создаем экземпляр Sorter и сортируем кандидатов
+    sorter = Sorter(filters_score)
+    sorted_resumes = sorter.sort_candidates(resumes)
+
     # Выводим результаты
-    for resume in resumes:
+    for i, resume in enumerate(sorted_resumes, 1):
+        print(f"Кандидат {i}:")
         print(f"Вакансия: {resume['title']}")
         print(f"Имя: {resume['name']}")
         print(f"Город: {resume['Город']}")
@@ -176,4 +154,10 @@ if __name__ == "__main__":
         print(f"Занятость: {resume['Занятость']}")
         print(f"Навыки: {resume['Навыки']}")
         print(f"Опыт: {resume['Опыт']}")
-        print(f"Ссылка: {resume['link']}\n")
+        print(f"Ссылка: {resume['link']}")
+        print(f"Баллы: {resume['score']}")
+        print("-" * 40)
+
+
+
+
