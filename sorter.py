@@ -5,27 +5,24 @@ class Sorter:
     def calculate_relevance_score(self, resume):
         score = 0
 
-        # Проверяем каждый фильтр на пустоту
-        if self.filters_score["job_position"]:
-            if self.filters_score["job_position"].lower() in resume["title"].lower():
-                score += 10  # Если должность подходит, добавляем 10 баллов
+        # Проверка должности
+        if self.filters_score.get("job_position") and self.filters_score["job_position"].lower() in resume["title"].lower():
+            score += 10  # Если должность подходит, добавляем 10 баллов
 
-        if self.filters_score["city"]:
-            if self.filters_score["city"].lower() in resume["Город"].lower():
-                score += 5  # Если город подходит, добавляем 5 баллов
+        # Проверка города
+        if self.filters_score.get("city") and self.filters_score["city"].lower() in resume["Город"].lower():
+            score += 5  # Если город подходит, добавляем 5 баллов
 
-        if self.filters_score["employment_type"]:
-            if self.filters_score["employment_type"].lower() in resume["Занятость"].lower():
-                score += 5  # Если тип занятости подходит, добавляем 5 баллов
+        # Проверка типа занятости
+        if self.filters_score.get("employment_type") and self.filters_score["employment_type"].lower() in resume["Занятость"].lower():
+            score += 5  # Если тип занятости подходит, добавляем 5 баллов
 
-        # Для ключевых слов, если они есть в фильтре
-        if self.filters_score["keywords"]:
-            for keyword in self.filters_score["keywords"]:
-                if keyword and keyword.lower() in resume["Навыки"].lower():
-                    score += 3  # Добавляем 3 балла за каждое совпадение ключевого слова
+        # Проверка ключевых слов
+        if self.filters_score.get("keywords"):
+            score += sum(3 for keyword in self.filters_score["keywords"] if keyword and keyword.lower() in resume.get("Навыки", "").lower())
 
-        # Оценка по опыту (если опыт задан в фильтре)
-        if self.filters_score["employment_type"] and resume.get("Опыт") != "Опыт не найден":
+        # Оценка по опыту
+        if self.filters_score.get("employment_type") and resume.get("Опыт") != "Опыт не найден":
             score += 5  # Добавляем 5 баллов за наличие опыта
 
         return score
