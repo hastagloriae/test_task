@@ -167,7 +167,7 @@ if __name__ == "__main__":
     scraper = ResumeScraper(base_url, headers, filters_vacancy, filters_score)
 
     # Собираем резюме с 10 страниц
-    resumes = scraper.scrape_resumes(pages=10)
+    resumes = scraper.scrape_resumes(pages=5)
 
     # Создаем экземпляр Sorter и сортируем кандидатов
     sorter = Sorter(filters_score)

@@ -1,3 +1,4 @@
+
 class Sorter:
     def __init__(self, filters_score):
         self.filters_score = filters_score
